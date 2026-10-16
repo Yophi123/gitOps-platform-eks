@@ -5,7 +5,7 @@
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-1.34-326CE5?logo=kubernetes&logoColor=white)
 ![CNI](https://img.shields.io/badge/CNI-Cilium%20(ENI%20mode)-F8C517)
 ![Auth](https://img.shields.io/badge/auth-access%20entries-informational)
-![infra-ci](https://github.com/OWNER/REPO/actions/workflows/infra-ci.yml/badge.svg)
+![infra-ci](https://github.com/Yophi123/gitOps-platform-eks/actions/workflows/infra-ci.yml/badge.svg)
 
 EKS control plane plus a small, tainted system node group, built for Cilium
 (ENI mode, kube-proxy replacement) and Karpenter.
