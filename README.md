@@ -8,7 +8,7 @@
 ![Karpenter](https://img.shields.io/badge/autoscaling-Karpenter-2E8B57)
 ![Vault](https://img.shields.io/badge/secrets-Vault%20%2B%20ESO-FFEC6E?logo=vault&logoColor=black)
 ![infra-ci](https://github.com/Yophi123/gitOps-platform-eks/actions/workflows/infra-ci.yml/badge.svg)
-![gitops-ci](https://github.com/github.com/Yophi123/gitOps-platform-eks/actions/workflows/gitops-ci.yml/badge.svg)
+![gitops-ci](https://github.com/Yophi123/gitOps-platform-eks/actions/workflows/gitops-ci.yml/badge.svg)
 
 A production-style EKS platform defined entirely as code. Terraform provisions
 the AWS infrastructure and bootstraps the cluster. From then on, Argo CD
