@@ -105,7 +105,7 @@ variable "system_node_max_size" {
 
 variable "system_node_desired_size" {
   type    = number
-  default = 1
+  default = 2
 }
 
 variable "system_node_disk_size" {
@@ -118,6 +118,12 @@ variable "system_node_dedicated" {
   type        = bool
   description = "Taint system nodes with CriticalAddonsOnly so app pods land on Karpenter nodes"
   default     = true
+}
+
+variable "node_group_wait_for" {
+  type        = list(string)
+  description = "Values (e.g. the Cilium release name) that must exist before the system node group is created, so nodes boot into a working CNI"
+  default     = []
 }
 
 variable "tags" {

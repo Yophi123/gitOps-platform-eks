@@ -5,7 +5,7 @@
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-1.34-326CE5?logo=kubernetes&logoColor=white)
 ![CNI](https://img.shields.io/badge/CNI-Cilium%20(ENI%20mode)-F8C517)
 ![Auth](https://img.shields.io/badge/auth-access%20entries-informational)
-![infra-ci](https://github.com/Yophi123/gitOps-platform-eks/actions/workflows/infra-ci.yml/badge.svg)
+![infra-ci](https://github.com/OWNER/REPO/actions/workflows/infra-ci.yml/badge.svg)
 
 EKS control plane plus a small, tainted system node group, built for Cilium
 (ENI mode, kube-proxy replacement) and Karpenter.
@@ -13,71 +13,77 @@ EKS control plane plus a small, tainted system node group, built for Cilium
 ## Design
 
 - **No default addons** (`bootstrap_self_managed_addons = false`): no aws-node,
-  kube-proxy or CoreDNS. Nodes stay NotReady until Cilium is installed.
+  kube-proxy or CoreDNS.
+- **The node group waits for the CNI.** A managed node group only goes `ACTIVE`
+  once its nodes are Ready, which needs Cilium. `node_group_wait_for` gates the
+  node group on the Cilium release, so nodes boot into a working CNI.
+- **Pod Identity agent depends on the cluster only.** It runs on the host
+  network, so it starts as soon as nodes join. It must not wait for the node
+  group.
 - **Access entries only** (`authentication_mode = "API"`): no aws-auth ConfigMap.
   The identity running Terraform gets admin automatically.
 - **Secrets** are envelope-encrypted with a dedicated, rotating KMS key.
 - **System nodes** use IMDSv2 with hop limit 1 and encrypted gp3 volumes. They
   carry the `node.cilium.io/agent-not-ready` startup taint, plus an optional
-  `CriticalAddonsOnly` taint.
+  `CriticalAddonsOnly` taint. Everything scheduled on them must tolerate
+  `CriticalAddonsOnly`.
 - **No CNI policy on the node role.** The Cilium operator gets ENI permissions
   through Pod Identity instead.
 - **Karpenter discovery.** The cluster SG is tagged `karpenter.sh/discovery`, so
   Karpenter nodes share it.
-- **Pod Identity agent** is installed here because it runs on the host network
-  before any CNI exists. CoreDNS and EBS CSI are added in the root, after Cilium.
 - **`upgrade_policy = STANDARD`** keeps forgotten clusters out of extended-support
   pricing.
 
 ## Bootstrap order
 
-
 ```
-vpc ─▶ eks (cluster, system nodes: NotReady, pod-identity-agent)
-          └─▶ cilium-bootstrap (nodes become Ready)
-                 └─▶ CoreDNS addon ─▶ argocd-bootstrap ─▶ Argo CD adopts Cilium
+EKS control plane ─▶ Pod Identity association ─▶ Cilium (Helm, no wait)
+        │                                              │
+        └─▶ pod-identity-agent addon          node_group_wait_for
+                                                       ▼
+                                   system node group (nodes boot Ready)
+                                                       ▼
+                                                 CoreDNS addon
 ```
 
 ## Usage
 
-Called from the environment root (`envs/dev/main.tf`), after `module.vpc`:
+Called from the environment root (`envs/dev/main.tf`):
 
 ```hcl
 module "eks" {
   source = "../../modules/eks"
 
-  project_name       = local.project_name
+  project_name       = var.project_name
   cluster_name       = local.cluster_name
-  kubernetes_version = "1.34"
+  kubernetes_version = var.kubernetes_version
 
   control_plane_subnet_ids = module.vpc.infra_subnet_ids
   node_subnet_ids          = module.vpc.infra_subnet_ids
 
   endpoint_public_access = true
-  public_access_cidrs    = var.admin_cidrs # e.g. ["203.0.113.10/32"]
+  public_access_cidrs    = var.admin_cidrs
+  admin_principal_arns   = var.admin_principal_arns
 
-  # Don't include the identity running Terraform; it is added automatically.
-  admin_principal_arns = [var.sso_admin_role_arn]
-
-  system_node_instance_types = ["t3.large"]
-  system_node_desired_size   = 2
+  system_node_instance_types = var.system_node_instance_types
+  system_node_desired_size   = var.system_node_desired_size
   system_node_dedicated      = true
 
-  tags = local.tags
+  # Nodes are created after Cilium, so they come up Ready
+  node_group_wait_for = [module.cilium_bootstrap.release_name]
 }
 
-# CoreDNS waits for Cilium; created too early it sits DEGRADED until timeout.
 resource "aws_eks_addon" "coredns" {
   cluster_name                = module.eks.cluster_name
   addon_name                  = "coredns"
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
 
-  depends_on = [module.cilium_bootstrap]
+  depends_on = [module.eks] # after the node group is ACTIVE
 }
 ```
 
-The root's Kubernetes and Helm providers read from the module outputs:
+The root's Helm provider reads from the module outputs:
 
 ```hcl
 provider "helm" {
@@ -87,13 +93,10 @@ provider "helm" {
     exec = {
       api_version = "client.authentication.k8s.io/v1beta1"
       command     = "aws"
-      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name]
+      args        = ["eks", "get-token", "--cluster-name", module.eks.cluster_name, "--region", var.aws_region]
     }
   }
 }
-
-# Cilium:  k8sServiceHost = module.eks.cluster_endpoint_host
-# Vault:   kubernetes_host / JWT issuer = module.eks.oidc_issuer_url
 ```
 
 <!-- BEGIN_TF_DOCS -->
@@ -107,6 +110,7 @@ provider "helm" {
 | support_type | `STANDARD` or `EXTENDED` | `string` | `"STANDARD"` |
 | control_plane_subnet_ids | Control-plane ENI subnets (≥ 2 AZs) | `list(string)` | n/a |
 | node_subnet_ids | System node group subnets | `list(string)` | n/a |
+| node_group_wait_for | Values that must exist before the node group (the Cilium release) | `list(string)` | `[]` |
 | service_ipv4_cidr | Kubernetes Service CIDR | `string` | `"172.20.0.0/16"` |
 | endpoint_public_access | Expose the API server publicly | `bool` | `true` |
 | public_access_cidrs | CIDRs allowed to reach the public endpoint | `list(string)` | `["0.0.0.0/0"]` |
@@ -138,5 +142,6 @@ provider "helm" {
 | service_ipv4_cidr | Kubernetes Service CIDR |
 | system_node_role_arn | System node IAM role ARN |
 | system_node_group_name | System node group name |
+| pod_identity_agent_addon_arn | Pod Identity agent addon ARN |
 | kms_key_arn | Secrets encryption KMS key ARN |
 <!-- END_TF_DOCS -->

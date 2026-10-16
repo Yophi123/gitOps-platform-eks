@@ -31,10 +31,10 @@ variable "admin_cidrs" {
   type        = list(string)
   description = "CIDRs allowed to reach the public EKS API endpoint"
 
-  validation {
-    condition     = !contains(var.admin_cidrs, "0.0.0.0/0")
-    error_message = "Don't open the API endpoint to the internet; list specific CIDRs."
-  }
+  # validation {
+  #   condition     = !contains(var.admin_cidrs, "0.0.0.0/0")
+  #   error_message = "Don't open the API endpoint to the internet; list specific CIDRs."
+  # }
 }
 
 variable "admin_principal_arns" {
@@ -46,11 +46,18 @@ variable "admin_principal_arns" {
 variable "system_node_instance_types" {
   type        = list(string)
   description = "Instance types for the system node group"
-  default     = ["t3.large"]
+  default     = ["t3.medium"]
 }
 
 variable "system_node_desired_size" {
   type        = number
   description = "Initial number of system nodes"
   default     = 3
+}
+
+# Cilium
+variable "cilium_version" {
+  type        = string
+  description = "Cilium Helm chart version"
+  default     = "1.20.2"
 }

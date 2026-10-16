@@ -57,3 +57,8 @@ output "kms_key_arn" {
   description = "KMS key ARN used for secrets encryption"
   value       = aws_kms_key.eks.arn
 }
+
+output "pod_identity_agent_addon_arn" {
+  description = "Pod Identity agent addon ARN; consumers wait on it before starting pods that need AWS credentials"
+  value       = aws_eks_addon.pod_identity_agent.arn
+}

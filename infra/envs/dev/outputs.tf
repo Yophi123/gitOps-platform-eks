@@ -22,3 +22,8 @@ output "kubeconfig_command" {
   description = "Command to add this cluster to your kubeconfig"
   value       = "aws eks update-kubeconfig --region ${var.region} --name ${module.eks.cluster_name}"
 }
+
+output "cilium_chart_version" {
+  description = "Installed Cilium chart version"
+  value       = module.cilium_bootstrap.chart_version
+}

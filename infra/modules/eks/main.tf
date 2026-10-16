@@ -245,7 +245,10 @@ resource "aws_eks_node_group" "system" {
     ignore_changes = [scaling_config[0].desired_size]
   }
 
-  depends_on = [aws_iam_role_policy_attachment.system_node]
+  depends_on = [
+    aws_iam_role_policy_attachment.system_node,
+    terraform_data.node_group_wait_for,
+  ]
 }
 
 ## Pod Identity agent (hostNetwork, so it runs before any CNI exists)
@@ -256,6 +259,9 @@ resource "aws_eks_addon" "pod_identity_agent" {
   resolve_conflicts_on_update = "OVERWRITE"
 
   tags = local.tags
+}
 
-  depends_on = [aws_eks_node_group.system]
+## Ordering gate: create the node group only after the CNI is installed
+resource "terraform_data" "node_group_wait_for" {
+  input = var.node_group_wait_for
 }

@@ -1,0 +1,78 @@
+# Keep in sync with gitops/platform/cilium/values.yaml.
+# Argo CD adopts this release in stage 3 and must render identical values.
+
+cluster:
+  name: ${cluster_name}
+
+# AWS ENI IPAM: every pod gets a VPC-routable IP from an ENI on its node
+ipam:
+  mode: eni
+eni:
+  enabled: true
+  awsEnablePrefixDelegation: ${prefix_delegation}
+  awsReleaseExcessIPs: true
+routingMode: native
+ipv4NativeRoutingCIDR: ${vpc_cidr}
+
+# No kube-proxy on this cluster, so Cilium must reach the API server directly
+kubeProxyReplacement: true
+k8sServiceHost: ${k8s_service_host}
+k8sServicePort: 443
+
+# Agent metrics. No root-level `tolerations:` here: the agent's chart default
+# tolerates every taint, and a root-level list would replace that.
+prometheus:
+  enabled: true
+
+operator:
+  replicas: ${operator_replicas} # one per system node (the chart won't co-locate replicas)
+  prometheus:
+    enabled: true
+  # Chart defaults + CriticalAddonsOnly (system nodes are dedicated).
+  # This list REPLACES the chart default, so the defaults are repeated here.
+  # node.cilium.io/agent-not-ready is appended by the chart itself.
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+    - key: node.cloudprovider.kubernetes.io/uninitialized
+      operator: Exists
+    - key: node.kubernetes.io/not-ready
+      operator: Exists
+    - key: node.kubernetes.io/unreachable
+      operator: Exists
+      effect: NoExecute
+      tolerationSeconds: 300
+    - key: CriticalAddonsOnly
+      operator: Exists
+
+hubble:
+  enabled: true
+  metrics:
+    enabled:
+      - dns
+      - drop
+      - tcp
+      - flow
+      - icmp
+      - port-distribution
+  tls:
+    auto:
+      enabled: true
+      method: cronJob # stable certs across renders, so Argo CD doesn't drift
+  relay:
+    enabled: true
+    tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+  ui:
+    enabled: ${hubble_ui}
+    tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+
+certgen:
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists

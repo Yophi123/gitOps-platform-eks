@@ -1,0 +1,18 @@
+name: Print Repository Info infra apply
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch: # Allows you to run this workflow manually from the Actions tab
+
+jobs:
+  display-info:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Print using GitHub Context
+        run: |
+          echo "Full Repository: ${{ github.repository }}"
+          echo "Repository Owner: ${{ github.repository_owner }}"
