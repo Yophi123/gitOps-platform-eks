@@ -1,0 +1,22 @@
+# Platform components: CNI, autoscaling, secrets, GitOps itself (cluster-wide rights)
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  description: Cluster platform components
+  sourceRepos:
+    - @@GITOPS_REPO_URL@@
+    - https://helm.cilium.io
+    - public.ecr.aws/karpenter
+    - https://argoproj.github.io/argo-helm
+    - https://charts.external-secrets.io
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: "*"
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"

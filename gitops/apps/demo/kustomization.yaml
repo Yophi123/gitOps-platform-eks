@@ -3,6 +3,6 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - serviceaccount.yaml
-  - vault-dynamic-secret.yaml
-  - external-secret.yaml
+  - vault-dynamic-secret.yaml # rendered by make render
+  - external-secret.yaml      # rendered by make render
   - deployment.yaml

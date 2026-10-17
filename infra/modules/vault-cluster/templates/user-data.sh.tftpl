@@ -1,0 +1,66 @@
+#!/bin/bash
+# Vault node bootstrap: TLS from SSM, config, Raft auto-join, KMS auto-unseal.
+set -euo pipefail
+
+REGION="${region}"
+IMDS_TOKEN=$(curl -sX PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 300")
+md() { curl -s -H "X-aws-ec2-metadata-token: $IMDS_TOKEN" "http://169.254.169.254/latest/meta-data/$1"; }
+LOCAL_IP=$(md local-ipv4)
+INSTANCE_ID=$(md instance-id)
+
+param() {
+  aws ssm get-parameter --region "$REGION" --name "$1" --with-decryption \
+    --query Parameter.Value --output text
+}
+
+install -d -o vault -g vault -m 0750 /opt/vault/data /opt/vault/tls
+param "${ssm_prefix}/tls/ca"   > /opt/vault/tls/ca.pem
+param "${ssm_prefix}/tls/cert" > /opt/vault/tls/vault.pem
+param "${ssm_prefix}/tls/key"  > /opt/vault/tls/vault-key.pem
+chown vault:vault /opt/vault/tls/*
+chmod 0640 /opt/vault/tls/vault-key.pem
+
+cat > /etc/vault.d/vault.hcl <<EOF
+ui            = true
+cluster_name  = "${name}"
+api_addr      = "https://$LOCAL_IP:8200"
+cluster_addr  = "https://$LOCAL_IP:8201"
+disable_mlock = true
+
+listener "tcp" {
+  address         = "0.0.0.0:8200"
+  cluster_address = "0.0.0.0:8201"
+  tls_cert_file   = "/opt/vault/tls/vault.pem"
+  tls_key_file    = "/opt/vault/tls/vault-key.pem"
+}
+
+storage "raft" {
+  path    = "/opt/vault/data"
+  node_id = "$INSTANCE_ID"
+
+  retry_join {
+    auto_join               = "provider=aws region=$REGION tag_key=vault-cluster tag_value=${name} addr_type=private_v4"
+    auto_join_scheme        = "https"
+    leader_tls_servername   = "vault.internal"
+    leader_ca_cert_file     = "/opt/vault/tls/ca.pem"
+    leader_client_cert_file = "/opt/vault/tls/vault.pem"
+    leader_client_key_file  = "/opt/vault/tls/vault-key.pem"
+  }
+}
+
+seal "awskms" {
+  region     = "$REGION"
+  kms_key_id = "${kms_key_id}"
+}
+EOF
+
+chown vault:vault /etc/vault.d/vault.hcl
+chmod 0640 /etc/vault.d/vault.hcl
+
+# Make the CLI work on the box without extra flags
+cat > /etc/profile.d/vault.sh <<'EOF'
+export VAULT_ADDR=https://127.0.0.1:8200
+export VAULT_CACERT=/opt/vault/tls/ca.pem
+EOF
+
+systemctl enable --now vault

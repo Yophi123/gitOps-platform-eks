@@ -78,7 +78,7 @@ variable "admin_principal_arns" {
 variable "system_node_instance_types" {
   type        = list(string)
   description = "Instance types for the system node group (Cilium operator, Karpenter, CoreDNS, Argo CD)"
-  default     = ["t3.small"]
+  default     = ["t3.large"]
 }
 
 variable "system_node_ami_type" {

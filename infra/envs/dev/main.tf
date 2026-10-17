@@ -83,3 +83,32 @@ module "argocd_bootstrap" {
 
   depends_on = [module.karpenter]
 }
+
+## Vault: 3-node Raft cluster behind an internal NLB
+module "vault" {
+  source = "../../modules/vault-cluster"
+
+  project_name = var.project_name
+  name         = "${local.cluster_name}-vault"
+  vpc_id       = module.vpc.vpc_id
+  subnet_ids   = module.vpc.infra_subnet_ids
+
+  client_security_groups = {
+    eks = module.eks.cluster_security_group_id
+  }
+}
+
+## Postgres for dynamic credentials (Vault creates per-lease users)
+module "rds" {
+  source = "../../modules/rds"
+
+  project_name = var.project_name
+  name         = "${local.cluster_name}-app"
+  vpc_id       = module.vpc.vpc_id
+  subnet_ids   = module.vpc.db_subnet_ids
+
+  allowed_security_groups = {
+    vault = module.vault.security_group_id
+    eks   = module.eks.cluster_security_group_id
+  }
+}

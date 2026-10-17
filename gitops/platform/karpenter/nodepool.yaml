@@ -1,3 +1,4 @@
+# General workloads: Spot first, amd64 only, consolidated aggressively.
 apiVersion: karpenter.sh/v1
 kind: NodePool
 metadata:
@@ -21,6 +22,7 @@ spec:
           effect: NoExecute
 
       requirements:
+        # amd64 only: workload images aren't guaranteed to be multi-arch
         - key: kubernetes.io/arch
           operator: In
           values: ["amd64"]
@@ -32,13 +34,13 @@ spec:
           values: ["spot", "on-demand"] # Spot preferred, On-Demand fallback
         - key: karpenter.k8s.aws/instance-category
           operator: In
-          values: ["c", "m", "r", "t"]
+          values: ["c", "m", "r"]
+        # Gen 6+ (c6a/c6i, c7a/c7i, c8i…): newer, cheaper per vCPU
         - key: karpenter.k8s.aws/instance-generation
           operator: Gt
-          values: ["4"]
+          values: ["5"]
         # Tiny sizes have very few ENI IPs, so very few pods
         - key: karpenter.k8s.aws/instance-size
-          # TODO: Make sure to fit the right instance-size!!
           # operator: NotIn
           # values: ["nano", "micro", "small"]
           operator: In
@@ -47,8 +49,8 @@ spec:
       expireAfter: 720h # recycle nodes every 30 days
 
   limits:
-    cpu: "16" # dev cost guard-rail
-    memory: 64Gi
+    cpu: "32" # cost guard-rail
+    memory: 128Gi
 
   disruption:
     consolidationPolicy: WhenEmptyOrUnderutilized

@@ -37,3 +37,50 @@ output "argocd_admin_password_command" {
   description = "Read the initial Argo CD admin password"
   value       = module.argocd_bootstrap.admin_password_command
 }
+
+output "vault_addr" {
+  description = "Vault address for in-VPC clients"
+  value       = module.vault.vault_addr
+}
+
+output "vault_ca_cert_pem" {
+  description = "Vault CA certificate"
+  value       = module.vault.ca_cert_pem
+}
+
+output "vault_cluster_tag" {
+  description = "Tag on every Vault node"
+  value       = module.vault.cluster_tag
+}
+
+output "eks_oidc_issuer_url" {
+  description = "EKS OIDC issuer (Vault JWT auth)"
+  value       = module.eks.oidc_issuer_url
+}
+
+output "rds_address" {
+  value = module.rds.address
+}
+
+output "rds_port" {
+  value = module.rds.port
+}
+
+output "rds_db_name" {
+  value = module.rds.db_name
+}
+
+output "rds_master_secret_arn" {
+  value = module.rds.master_secret_arn
+}
+
+
+output "cilium_helm_values" {
+  description = "Rendered Cilium values (gitops/envs/<env>/values/cilium.yaml)"
+  value       = module.cilium_bootstrap.helm_values
+}
+
+output "karpenter_helm_values" {
+  description = "Rendered Karpenter values (gitops/envs/<env>/values/karpenter.yaml)"
+  value       = module.karpenter.helm_values
+}
