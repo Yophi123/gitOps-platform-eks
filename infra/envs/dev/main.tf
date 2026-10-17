@@ -56,3 +56,16 @@ resource "aws_eks_addon" "coredns" {
 
   depends_on = [module.eks]
 }
+
+
+## Karpenter: AWS resources + controller (NodePools live in gitops/)
+module "karpenter" {
+  source = "../../modules/karpenter"
+
+  project_name  = var.project_name
+  cluster_name  = module.eks.cluster_name
+  chart_version = var.karpenter_version
+  replicas      = min(2, var.system_node_desired_size)
+
+  depends_on = [aws_eks_addon.coredns] # controller needs cluster DNS
+}

@@ -61,3 +61,9 @@ variable "cilium_version" {
   description = "Cilium Helm chart version"
   default     = "1.20.2"
 }
+
+variable "karpenter_version" {
+  type        = string
+  description = "Karpenter chart version"
+  default     = "1.15.0"
+}

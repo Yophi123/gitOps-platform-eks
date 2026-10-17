@@ -329,7 +329,128 @@ shows no changes.
 
 ## Stage 2: Karpenter
 
-_TODO: includes `cilium connectivity test` on Karpenter nodes._
+Terraform creates the AWS side (node role and access entry, controller role,
+interruption queue) and installs the controller. The `EC2NodeClass` and
+`NodePool` live in `gitops/platform/karpenter/`.
+
+*NOTE: Be sure to check of the instance size of the nodepool before applying the config!!*
+
+```bash
+# Once per account: Spot service-linked role
+aws iam get-role --role-name AWSServiceRoleForEC2Spot >/dev/null 2>&1 \
+  || aws iam create-service-linked-role --aws-service-name spot.amazonaws.com
+
+cd infra/envs/dev
+terraform init
+terraform apply
+
+kubectl apply -k ../../../gitops/platform/karpenter/
+```
+
+### Controller
+
+```bash
+kubectl -n kube-system get pods -l app.kubernetes.io/name=karpenter -o wide
+```
+
+```
+NAME                         READY   STATUS    RESTARTS   AGE   IP             NODE
+karpenter-6d8f7c9b5d-7xk2p   1/1     Running   0          2m    10.16.71.40    ip-10-16-74-132...
+karpenter-6d8f7c9b5d-q9m4t   1/1     Running   0          2m    10.16.230.12   ip-10-16-235-69...
+```
+
+One replica per system node. Only the leader acts; the other is a standby.
+
+### EC2NodeClass and NodePool ready
+
+```bash
+kubectl get ec2nodeclass,nodepool
+```
+
+```
+NAME                                     READY   AGE
+ec2nodeclass.karpenter.k8s.aws/default   True    1m
+
+NAME                            NODECLASS   NODES   READY   AGE
+nodepool.karpenter.sh/general   default     0       True    1m
+```
+
+If `READY` is `False`, `kubectl describe ec2nodeclass default` shows which
+selector (AMI, subnet, security group) or instance profile failed.
+
+### Scale-up test
+
+```bash
+kubectl create deployment inflate --image=public.ecr.aws/eks-distro/kubernetes/pause:3.7 --replicas=0
+kubectl set resources deployment inflate --requests=cpu=1
+kubectl scale deployment inflate --replicas=5
+
+kubectl -n kube-system logs -l app.kubernetes.io/name=karpenter -c controller -f | grep -E "launched|registered|initialized"
+```
+
+Within about a minute, Karpenter launches a node for the pending pods:
+
+```bash
+kubectl get nodeclaims
+kubectl get nodes -L node-pool,karpenter.sh/capacity-type,node.kubernetes.io/instance-type
+```
+
+```
+NAME            TYPE         CAPACITY   ZONE              NODE                                               READY   AGE
+general-x7k2p   c6a.2xlarge  spot       ap-southeast-1a   ip-10-16-41-87.ap-southeast-1.compute.internal     True    55s
+
+NAME                                              STATUS   NODE-POOL   CAPACITY-TYPE   INSTANCE-TYPE
+ip-10-16-41-87.ap-southeast-1.compute.internal    Ready    general     spot            c6a.2xlarge
+ip-10-16-74-132.ap-southeast-1.compute.internal   Ready    system                      t3.large
+ip-10-16-235-69.ap-southeast-1.compute.internal   Ready    system                      t3.large
+```
+
+The new node's IP falls in an **app** subnet: `10.16.32.0/20` (AZ a),
+`10.16.112.0/20` (AZ b) or `10.16.192.0/20` (AZ c). Its Cilium startup taint is
+gone, and the `inflate` pods run there with VPC IPs from the same subnet.
+
+### Network connectivity test
+
+Now that untainted nodes exist:
+
+```bash
+cilium connectivity test
+```
+
+```
+✅ [gitops-eks-dev] All NN tests (NNN actions) successful, N tests skipped, 0 scenarios skipped.
+```
+*Note: CNNP = CiliumClusterwideNetworkPolicy* 
+
+```bash
+kubectl delete ns cilium-test-1 --ignore-not-found
+```
+
+*NOTE: Delete the CCNP test Namespaces if they exists*
+```bash
+kubectl delete ns cilium-test-ccnp1 --ignore-not-found
+kubectl delete ns cilium-test-ccnp2 --ignore-not-found
+```
+### Consolidation test
+
+```bash
+kubectl delete deployment inflate
+kubectl -n kube-system logs -l app.kubernetes.io/name=karpenter -c controller -f | grep -E "disrupting|terminated"
+```
+
+About a minute after the node empties, Karpenter consolidates it away:
+
+```bash
+kubectl get nodeclaims
+```
+
+```
+No resources found
+```
+
+**Stage 2 is complete when** the EC2NodeClass and NodePool are `Ready`, a
+scale-up lands pods on a Spot node in an app subnet, `cilium connectivity test`
+passes, and the node is removed after scale-down.
 
 ## Stage 3: Argo CD (app-of-apps, adopts Cilium)
 

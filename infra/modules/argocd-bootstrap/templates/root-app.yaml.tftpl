@@ -1,0 +1,15 @@
+applications:
+  root:
+    namespace: argocd
+    project: default
+    source:
+      repoURL: ${repo_url}
+      targetRevision: ${target_revision}
+      path: gitops/envs/${environment}/apps
+    destination:
+      server: https://kubernetes.default.svc
+      namespace: argocd
+    syncPolicy:
+      automated:
+        prune: true    # removing an Application file removes the Application...
+        selfHeal: true # ...but children have no finalizers, so their resources stay

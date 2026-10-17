@@ -1,0 +1,57 @@
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: general
+spec:
+  template:
+    metadata:
+      labels:
+        node-pool: general
+    spec:
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+
+      # Cilium removes this once its agent is ready. Declared as a startup taint
+      # so Karpenter doesn't count it against pending pods when launching.
+      startupTaints:
+        - key: node.cilium.io/agent-not-ready
+          value: "true"
+          effect: NoExecute
+
+      requirements:
+        - key: kubernetes.io/arch
+          operator: In
+          values: ["amd64"]
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["spot", "on-demand"] # Spot preferred, On-Demand fallback
+        - key: karpenter.k8s.aws/instance-category
+          operator: In
+          values: ["c", "m", "r", "t"]
+        - key: karpenter.k8s.aws/instance-generation
+          operator: Gt
+          values: ["4"]
+        # Tiny sizes have very few ENI IPs, so very few pods
+        - key: karpenter.k8s.aws/instance-size
+          # TODO: Make sure to fit the right instance-size!!
+          # operator: NotIn
+          # values: ["nano", "micro", "small"]
+          operator: In
+          values: ["micro", "small", "medium"]
+
+      expireAfter: 720h # recycle nodes every 30 days
+
+  limits:
+    cpu: "16" # dev cost guard-rail
+    memory: 64Gi
+
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 1m
+    budgets:
+      - nodes: "20%"

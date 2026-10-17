@@ -27,3 +27,8 @@ output "cilium_chart_version" {
   description = "Installed Cilium chart version"
   value       = module.cilium_bootstrap.chart_version
 }
+
+output "karpenter_node_role_name" {
+  description = "Node role for EC2NodeClass spec.role"
+  value       = module.karpenter.node_role_name
+}
