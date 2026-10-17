@@ -16,7 +16,7 @@ ipv4NativeRoutingCIDR: 10.16.0.0/16
 
 # No kube-proxy on this cluster, so Cilium must reach the API server directly
 kubeProxyReplacement: true
-k8sServiceHost: 58951411197FF55389EE929CED874389.gr7.ap-southeast-1.eks.amazonaws.com
+k8sServiceHost: 8F7FC7AD30E3B86B2853A42C974780D7.gr7.ap-southeast-1.eks.amazonaws.com
 k8sServicePort: 443
 
 # Agent metrics. No root-level `tolerations:` here: the agent's chart default
