@@ -30,8 +30,10 @@ module "eks" {
   system_node_desired_size   = var.system_node_desired_size
   system_node_dedicated      = true
 
-  # Nodes are created after Cilium, so they come up Ready
-  node_group_wait_for = [module.cilium_bootstrap.release_name]
+  # Nodes are created after Cilium, so they come up Ready. Wait for NAT Gateway as well
+  node_group_wait_for = [module.cilium_bootstrap.release_name, module.vpc.nat_gateway_id]
+
+  depends_on = [ module.vpc ]
 }
 
 ## Cilium: ENI IPAM, kube-proxy replacement, Hubble (nodes become Ready)
@@ -68,4 +70,16 @@ module "karpenter" {
   replicas      = min(2, var.system_node_desired_size)
 
   depends_on = [aws_eks_addon.coredns] # controller needs cluster DNS
+}
+
+## Argo CD + root app: from here on, Git is the source of truth in-cluster
+module "argocd_bootstrap" {
+  source = "../../modules/argocd-bootstrap"
+
+  environment               = "dev"
+  repo_url                  = var.gitops_repo_url
+  argocd_chart_version      = var.argocd_chart_version
+  argocd_apps_chart_version = var.argocd_apps_chart_version
+
+  depends_on = [module.karpenter]
 }

@@ -9,6 +9,15 @@ global:
     - key: CriticalAddonsOnly
       operator: Exists
 
+# The redis secret-init hook Job doesn't inherit global scheduling settings.
+# It runs pre-install, so without this the whole install waits on it.
+redisSecretInit:
+  nodeSelector:
+    node-pool: system
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+
 configs:
   params:
     server.insecure: true # no ingress yet; reached via port-forward

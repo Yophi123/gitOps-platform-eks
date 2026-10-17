@@ -67,3 +67,18 @@ variable "karpenter_version" {
   description = "Karpenter chart version"
   default     = "1.15.0"
 }
+
+variable "gitops_repo_url" {
+  type        = string
+  description = "Git repository Argo CD syncs from"
+}
+
+variable "argocd_chart_version" {
+  type        = string
+  description = "argo-cd chart version"
+}
+
+variable "argocd_apps_chart_version" {
+  type        = string
+  description = "argocd-apps chart version"
+}

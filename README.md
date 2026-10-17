@@ -41,6 +41,7 @@ reconciles all cluster and application state from Git.
 | cilium CLI | latest |
 | hubble CLI | latest |
 
+
 ### One-time: Terraform state bucket
 
 ```bash
@@ -68,6 +69,27 @@ echo "admin_cidrs = [\"$(curl -s https://checkip.amazonaws.com)/32\"]"
 
 Paste the output into `infra/envs/<env>/terraform.tfvars`. Re-run it and apply
 whenever your IP changes.
+
+## Building from scratch
+
+The Cilium values in Git include the cluster's API endpoint, which changes
+whenever the cluster is recreated. Bootstrap in two phases so Argo CD never
+adopts Cilium with a stale endpoint:
+
+```bash
+cd infra/envs/dev
+terraform apply -target=module.karpenter   # VPC, EKS, Cilium, CoreDNS, Karpenter
+
+# Refresh environment values, then push
+echo 'module.cilium_bootstrap.helm_values' | terraform console | sed '1d;$d' > ../../../gitops/envs/dev/values/cilium.yaml
+echo 'module.karpenter.helm_values'        | terraform console | sed '1d;$d' > ../../../gitops/envs/dev/values/karpenter.yaml
+git -C ../../.. add gitops && git -C ../../.. commit -m "dev: refresh values" && git -C ../../.. push
+
+terraform apply                            # Argo CD + root app
+```
+
+After a destroy, check for Karpenter leftovers (instances, launch templates and
+instance profiles tagged with the cluster name) before rebuilding.
 
 ### Commit the provider lock file
 
@@ -271,6 +293,12 @@ intentionally no aws-node or kube-proxy.
 aws eks describe-nodegroup --region "$REGION" --cluster-name "$CLUSTER" \
   --nodegroup-name "${CLUSTER}-system" \
   --query 'nodegroup.{status:status,health:health.issues}'
+
+```bash
+  aws ec2 get-console-output --region "$REGION" --latest --output text \
+    --instance-id $(aws ec2 describe-instances --region "$REGION" \
+      --filters "Name=tag:eks:nodegroup-name,Values=gitops-eks-dev-system" "Name=instance-state-name,Values=running" \
+      --query 'Reservations[0].Instances[0].InstanceId' --output text) | grep -iE "nodeadm|kubelet|error" | tail -20
 ```
 
 ```json
@@ -312,10 +340,6 @@ This should list the identity that ran Terraform, plus any `admin_principal_arns
 
 ```bash
 terraform plan
-```
-
-```
-No changes. Your infrastructure matches the configuration.
 ```
 
 **Stage 1 is complete when** both nodes are `Ready`, the node group and addons are
@@ -452,9 +476,79 @@ No resources found
 scale-up lands pods on a Spot node in an app subnet, `cilium connectivity test`
 passes, and the node is removed after scale-down.
 
-## Stage 3: Argo CD (app-of-apps, adopts Cilium)
+## Stage 3: Argo CD (app-of-apps)
 
-_TODO_
+Terraform installs Argo CD and one root Application. The root app syncs
+`gitops/envs/dev/apps/`, which takes over Cilium and Karpenter from their bootstrap
+Helm releases, deploys the NodePools, and makes Argo CD manage itself. From here
+on, cluster changes go through Git.
+
+```
+root ─▶ platform project (-10) ─▶ cilium, karpenter-crd (0) ─▶ karpenter (1)
+     ─▶ karpenter-nodes (2) ─▶ argocd (10)
+```
+
+Push `gitops/` to `main` first, then:
+
+```bash
+cd infra/envs/dev
+terraform apply
+```
+
+### Applications synced and healthy
+
+```bash
+kubectl -n argocd get applications
+```
+
+```
+NAME              SYNC STATUS   HEALTH STATUS
+argocd            Synced        Healthy
+cilium            Synced        Healthy
+karpenter         Synced        Healthy
+karpenter-crd     Synced        Healthy
+karpenter-nodes   Synced        Healthy
+root              Synced        Healthy
+```
+
+Argo CD components run on the system nodes:
+
+```bash
+kubectl -n argocd get pods -o wide
+```
+
+Every pod's `NODE` should be one of the two system nodes.
+
+### UI
+
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo &
+kubectl -n argocd port-forward svc/argocd-server 8080:80 
+```
+
+Open http://localhost:8080 and log in as `admin`. Then change the password and
+delete the `argocd-initial-admin-secret` Secret.
+
+### Prove Git is the source of truth
+
+**Drift is reverted (self-heal):**
+
+```bash
+kubectl patch nodepool general --type=merge -p '{"spec":{"limits":{"cpu":"4"}}}'
+sleep 20
+kubectl get nodepool general -o jsonpath='{.spec.limits.cpu}{"\n"}'
+```
+
+```
+32
+```
+
+**Changes flow from Git:** edit `limits.cpu` in `gitops/platform/karpenter/nodepool.yaml`,
+commit and push. Within about 3 minutes (`timeout.reconciliation`), or right away
+with a refresh in the UI, the cluster shows the new value.
+
+**Stage 3 is complete when** all Applications are `Synced`/`Healthy`, a manual
+change is reverted, and a Git change reaches the cluster without `kubectl`.
 
 ## Stage 4: Vault + External Secrets Operator
 
@@ -486,9 +580,28 @@ _TODO_
 | Hubble Relay `Pending` | Missing `CriticalAddonsOnly` toleration | `kubectl describe pod -n kube-system -l k8s-app=hubble-relay` |
 | Node `Ready` reason isn't the CNI message | Kubelet or instance issue | `aws ssm start-session --target <instance-id>`, then `journalctl -u kubelet` |
 
+
+### Argo CD
+
+| Symptom | Likely cause | Check |
+|---------|--------------|-------|
+| `root` app `ComparisonError` / `repository not found` | Wrong URL, or a private repo without credentials | `kubectl -n argocd get applications root -o yaml`; add a repository secret |
+| `cilium` or `karpenter` `OutOfSync` right after adoption | Git values differ from the bootstrap values | App diff in the UI; re-copy from `terraform console` |
+| `karpenter-crd` sync fails: `metadata.annotations: Too long` | Client-side apply on large CRDs | `ServerSideApply=true` in syncOptions |
+| `karpenter` app `Unknown`: OCI chart not found | OCI repo not registered | `configs.repositories.karpenter-oci` with `enableOCI: "true"` |
+| Argo CD pods `Pending` | Missing `CriticalAddonsOnly` toleration or `node-pool: system` label | `kubectl -n argocd describe pod <pod>` |
+| Child apps sync in the wrong order | No Application health check, so waves don't wait | `resource.customizations.health.argoproj.io_Application` in `argocd-cm` |
+
 ## Teardown
 
+Stop Argo CD from reconciling, remove Karpenter's nodes, then destroy:
+
 ```bash
+kubectl -n argocd delete application root --cascade=orphan
+kubectl -n argocd patch application karpenter-nodes --type=merge -p '{"spec":{"syncPolicy":null}}'
+kubectl delete nodepool --all
+kubectl wait --for=delete nodeclaims --all --timeout=10m
+
 cd infra/envs/dev
 terraform destroy
 ```

@@ -129,6 +129,10 @@ resource "helm_release" "crd" {
   repository = "oci://public.ecr.aws/karpenter"
   chart      = "karpenter-crd"
   version    = var.chart_version
+
+  lifecycle {
+    ignore_changes = all
+  }
 }
 
 resource "helm_release" "karpenter" {
@@ -142,7 +146,11 @@ resource "helm_release" "karpenter" {
   values = [local.helm_values]
 
   wait    = true
-  # timeout = 600
+  timeout = 1200
+
+  lifecycle {
+    ignore_changes = all
+  }
 
   depends_on = [
     helm_release.crd,

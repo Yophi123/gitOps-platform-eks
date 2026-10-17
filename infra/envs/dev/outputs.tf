@@ -3,7 +3,7 @@ output "vpc_id" {
   value       = module.vpc.vpc_id
 }
 
-output "vpc_cidt" {
+output "vpc_cidr" {
   description = "VPC ID"
   value       = module.vpc.vpc_cidr
 }
@@ -31,4 +31,9 @@ output "cilium_chart_version" {
 output "karpenter_node_role_name" {
   description = "Node role for EC2NodeClass spec.role"
   value       = module.karpenter.node_role_name
+}
+
+output "argocd_admin_password_command" {
+  description = "Read the initial Argo CD admin password"
+  value       = module.argocd_bootstrap.admin_password_command
 }

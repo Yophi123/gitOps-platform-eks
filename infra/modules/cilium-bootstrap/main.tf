@@ -50,6 +50,10 @@ resource "helm_release" "cilium" {
 
   wait = false
 
+  lifecycle {
+    ignore_changes = all
+  }
+
   depends_on = [
     aws_iam_role_policy.operator,
     aws_eks_pod_identity_association.operator,
