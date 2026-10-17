@@ -13,6 +13,7 @@ spec:
     - https://helm.cilium.io
     - public.ecr.aws/karpenter
     - https://argoproj.github.io/argo-helm
+    - https://charts.external-secrets.io
   destinations:
     - server: https://kubernetes.default.svc
       namespace: "*"

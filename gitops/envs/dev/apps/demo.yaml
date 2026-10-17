@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5" # after ESO's CRDs exist
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io # workloads: deleting the app cleans up
+spec:
+  project: apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo
+  source:
+    repoURL: https://github.com/Yophi123/gitOps-platform-eks.git
+    targetRevision: main
+    path: gitops/envs/dev/demo
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../apps/demo
+patches:
+  - target:
+      kind: VaultDynamicSecret
+      name: demo-db
+    patch: |-
+      - op: replace
+        path: /spec/provider/server
+        value: https://gitops-eks-dev-vault-nlb-da6c47de8c8eda11.elb.ap-southeast-1.amazonaws.com:8200
+      - op: replace
+        path: /spec/provider/caBundle
+        value: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUI3VENDQVhLZ0F3SUJBZ0lSQUowdWR6cnkxNWFvU1gza25Fa05SQjB3Q2dZSUtvWkl6ajBFQXdNd056RVQKTUJFR0ExVUVDaE1LWjJsMGIzQnpMV1ZyY3pFZ01CNEdBMVVFQXhNWFoybDBiM0J6TFdWcmN5MWtaWFl0ZG1GMQpiSFFnUTBFd0hoY05Nall4TURFM01qQXhNekkxV2hjTk16WXhNREUwTWpBeE16STFXakEzTVJNd0VRWURWUVFLCkV3cG5hWFJ2Y0hNdFpXdHpNU0F3SGdZRFZRUURFeGRuYVhSdmNITXRaV3R6TFdSbGRpMTJZWFZzZENCRFFUQjIKTUJBR0J5cUdTTTQ5QWdFR0JTdUJCQUFpQTJJQUJHL0lnL2Y0cGtUTFQyN25hUVIxWWo3cisvR2NkV0tVNFFPMQp3cDVZUnp3aU1mK2F4Qmxucm1ocVNVcDBDNG5teVF6aTlFQW5IbE56NGpwQjNIaGloUXo1ZGtyWHMwblB2RnIrCmpLMFIvWnp4THo1aWVhN3dSMmpXN1U2c3JQWXNqYU5DTUVBd0RnWURWUjBQQVFIL0JBUURBZ0dHTUE4R0ExVWQKRXdFQi93UUZNQU1CQWY4d0hRWURWUjBPQkJZRUZKYTRveDhhUzBSQUJqZWlDRGpZQ252aVA4RitNQW9HQ0NxRwpTTTQ5QkFNREEya0FNR1lDTVFEOHoxUDNYT2U5QURBQTdNSUVWWjVieW1VUEQ2YUZIZEI2TWpBYmVhM3I3anFrCkFaRXpjZGNUTklZZjJDRTJlS1lDTVFDZkpNM2RJUjA1djl5TXEvWmNsNUJqSVVDYmRiWDlDQ2ZWcG1CUTJRUkIKdGRQeWVLZHk2UnJ6ZVR3SCtydlVxZmM9Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+  - target:
+      kind: ExternalSecret
+      name: demo-db
+    patch: |-
+      - op: replace
+        path: /spec/target/template/data/DB_HOST
+        value: gitops-eks-dev-app.c1egw6m2cumy.ap-southeast-1.rds.amazonaws.com

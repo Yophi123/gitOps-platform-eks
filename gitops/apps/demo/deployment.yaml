@@ -1,0 +1,48 @@
+# Proves rotation: reads the mounted Secret on every loop, so new credentials
+# are picked up without a restart.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db-check
+  namespace: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db-check
+  template:
+    metadata:
+      labels:
+        app: db-check
+    spec:
+      serviceAccountName: demo-app
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999 # postgres user in the image
+      containers:
+        - name: db-check
+          image: postgres:18
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                U=$(cat /secrets/username)
+                PGPASSWORD="$(cat /secrets/password)" psql \
+                  "host=$(cat /secrets/DB_HOST) dbname=$(cat /secrets/DB_NAME) user=$U sslmode=require connect_timeout=5" \
+                  -tAc "select now(), current_user" || echo "$(date -u +%T) connect failed as $U"
+                sleep 30
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          volumeMounts:
+            - name: db
+              mountPath: /secrets
+              readOnly: true
+      volumes:
+        - name: db
+          secret:
+            secretName: demo-db
