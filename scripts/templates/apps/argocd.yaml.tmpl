@@ -10,6 +10,17 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: argocd
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      name: argocd-secret
+      jqPathExpressions:
+        - .data
+    - group: ""
+      kind: Secret
+      name: argocd-redis
+      jqPathExpressions:
+        - .data
   sources:
     - repoURL: https://argoproj.github.io/argo-helm
       chart: argo-cd
@@ -34,3 +45,4 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true

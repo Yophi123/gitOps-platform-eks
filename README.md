@@ -833,7 +833,151 @@ vault list sys/leases/lookup/database/creds/demo
 
 ## Stage 5: Argo Rollouts canary
 
-_TODO_
+### 5a. Prometheus and Argo Rollouts
+
+Argo CD installs kube-prometheus-stack (wave 3) and Argo Rollouts (wave 4).
+Prometheus, Grafana and the operator run on Karpenter nodes; the Rollouts
+controller and dashboard run on the system nodes; node-exporter runs everywhere.
+
+Pin both chart versions in `scripts/dev.env` (`PROM_STACK_CHART_VERSION`,
+`ROLLOUTS_CHART_VERSION`), then:
+
+```bash
+make push
+make status
+```
+
+```
+NAME               SYNC STATUS   HEALTH STATUS
+argo-rollouts      Synced        Healthy
+monitoring         Synced        Healthy
+...
+```
+
+#### Prometheus is scraping
+
+```bash
+kubectl -n monitoring get pods -o wide
+kubectl -n monitoring port-forward svc/kube-prometheus-stack-prometheus 9090 &
+```
+
+Open http://localhost:9090/targets. Every target should be `UP`, including
+`argo-rollouts-metrics` and one `node-exporter` per node. Then query:
+
+```
+count by (job) (up == 1)
+```
+
+#### Grafana
+
+```bash
+kubectl -n monitoring get secret kube-prometheus-stack-grafana -o jsonpath='{.data.admin-password}' | base64 -d; echo
+kubectl -n monitoring port-forward svc/kube-prometheus-stack-grafana 3000:80
+```
+
+Open http://localhost:3000 and log in as `admin`. The bundled
+"Kubernetes / Compute Resources" dashboards are preloaded.
+
+#### Argo Rollouts
+
+```bash
+kubectl -n argo-rollouts get pods -o wide        # controller + dashboard on system nodes
+kubectl get crd | grep argoproj.io | grep -E "rollouts|analysis|experiments"
+```
+
+Install the kubectl plugin (macOS: `brew install argoproj/tap/kubectl-argo-rollouts`),
+then open the dashboard:
+
+```bash
+kubectl argo rollouts version
+kubectl -n argo-rollouts port-forward svc/argo-rollouts-dashboard 3100:3100
+```
+
+Open http://localhost:3100. It's empty until the demo Rollout in 5b exists.
+
+**5a is complete when** both Applications are `Synced`/`Healthy`, all
+Prometheus targets are `UP`, and the Rollouts CRDs and dashboard are available.
+
+### 5b. Canary with automated rollback
+
+`podinfo` runs as an Argo Rollouts `Rollout` with 5 replicas: 20% → 2 min →
+50% → 2 min → 100%. A background analysis queries Prometheus every 30 seconds
+for the **canary pods'** 5xx rate. Two measurements at 5% or more abort the
+rollout. A `loadgen` Deployment keeps traffic flowing.
+
+```bash
+kubectl argo rollouts get rollout podinfo -n podinfo --watch
+```
+
+```
+Name:            podinfo
+Status:          ✔ Healthy
+Strategy:        Canary
+  Step:          4/4
+  SetWeight:     100
+Images:          ghcr.io/stefanprodan/podinfo:6.7.1 (stable)
+Replicas:        Desired 5, Current 5, Updated 5, Ready 5, Available 5
+```
+
+#### A good release promotes
+
+In `gitops/apps/podinfo/rollout.yaml`, change `PODINFO_UI_MESSAGE` to
+`"release v2"`, then commit and push. With `--watch` running, you'll see:
+
+1. A new ReplicaSet with 1 pod (20%) and an `AnalysisRun` starting.
+2. After 2 minutes, 50% (3 canary pods).
+3. After 2 more minutes, 100%. The old ReplicaSet scales down and the
+   AnalysisRun shows `✔ Successful`.
+
+#### A bad release rolls back automatically
+
+Change `PODINFO_UI_MESSAGE` to `"release v3"` **and** `PODINFO_RANDOM_ERROR` to
+`"true"`, then commit and push.
+
+```
+Name:            podinfo
+Status:          ✖ Degraded
+Message:         RolloutAborted: Rollout aborted update to revision 3:
+                 Metric "error-rate" assessed Failed due to failed (2) > failureLimit (1)
+Strategy:        Canary
+  Step:          0/4
+  SetWeight:     0
+```
+
+The canary pod is scaled away and the stable `release v2` pods carry 100% of the
+traffic again. No one ran `kubectl`.
+
+```bash
+kubectl -n podinfo get analysisrun
+kubectl -n podinfo describe analysisrun <name> | grep -A3 "Measurements"
+```
+
+The failed measurements show error rates well above 0.05. The Argo CD
+`podinfo` app also shows `Degraded`, since it reads the Rollout's health.
+
+#### Recover through Git
+
+An aborted rollout stays aborted while Git still holds the bad spec. Fix it the
+GitOps way, by reverting the commit:
+
+```bash
+git revert HEAD && git push
+```
+
+The Rollout returns to the `release v2` spec, which matches the stable
+ReplicaSet, so it goes back to `✔ Healthy` without a new rollout.
+
+#### Dashboard
+
+```bash
+kubectl -n argo-rollouts port-forward svc/argo-rollouts-dashboard 3100:3100
+```
+
+http://localhost:3100 shows steps, weights, ReplicaSets and AnalysisRuns live.
+
+**5b is complete when** a good release promotes through all steps on its own,
+a bad release aborts and returns to stable through analysis alone, and a
+`git revert` brings the Rollout back to `Healthy`.
 
 ## Stage 6: CI/CD and policy
 
@@ -897,6 +1041,13 @@ _TODO_
 | `argocd-redis-secret-init` `Pending`; Argo CD install hangs | Hook Job uses `redisSecretInit` scheduling, not `global` | `redisSecretInit.nodeSelector`/`tolerations` in the Argo CD values |
 | Argo CD or ESO pods `Pending` | Missing `CriticalAddonsOnly` toleration on a component | `kubectl describe pod`; ESO needs it on controller, webhook and cert-controller |
 | `karpenter` app: OCI chart not found | OCI repo not registered | `configs.repositories.karpenter-oci` with `enableOCI: "true"` |
+
+*NOTE: If argocd application is somehow out of sync, use the following commands*
+```bash
+kubectl -n argocd get application argocd -o jsonpath='phase: {.status.operationState.phase}{"\n"}message: {.status.operationState.message}{"\n"}'
+kubectl -n argocd get application argocd \
+  -o jsonpath='{range .status.resources[?(@.status=="OutOfSync")]}{.kind}/{.name}{"\n"}{end}'
+```
 
 ### Vault and External Secrets
 

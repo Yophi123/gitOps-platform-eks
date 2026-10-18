@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-rollouts
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4" # after monitoring: its ServiceMonitor CRD must exist
+spec:
+  project: platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-rollouts
+  sources:
+    - repoURL: https://argoproj.github.io/argo-helm
+      chart: argo-rollouts
+      targetRevision: @@ROLLOUTS_CHART_VERSION@@
+      helm:
+        releaseName: argo-rollouts
+        valueFiles:
+          - $values/gitops/envs/@@ENV@@/values/argo-rollouts.yaml
+    - repoURL: @@GITOPS_REPO_URL@@
+      targetRevision: @@GITOPS_REVISION@@
+      ref: values
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

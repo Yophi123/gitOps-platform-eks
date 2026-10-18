@@ -1,0 +1,29 @@
+installCRDs: true
+
+controller:
+  replicas: 1
+  nodeSelector:
+    node-pool: system
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true # scraped by kube-prometheus-stack
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+dashboard:
+  enabled: true
+  nodeSelector:
+    node-pool: system
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi

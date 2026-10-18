@@ -1,0 +1,63 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: podinfo
+  namespace: podinfo
+spec:
+  replicas: 5
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: podinfo
+  strategy:
+    canary:
+      # Runs for the whole rollout; a failure at any step aborts it
+      analysis:
+        templates:
+          - templateName: error-rate
+        startingStep: 1
+        args:
+          - name: canary-hash
+            valueFrom:
+              podTemplateHashValue: Latest
+      steps:
+        - setWeight: 20
+        - pause: { duration: 2m }
+        - setWeight: 50
+        - pause: { duration: 2m }
+        # 100% after the last step
+  template:
+    metadata:
+      labels:
+        app: podinfo
+    spec:
+      containers:
+        - name: podinfo
+          image: ghcr.io/stefanprodan/podinfo:6.7.1
+          ports:
+            - name: http
+              containerPort: 9898
+          env:
+            # Release marker: change it to roll out a new version
+            - name: PODINFO_UI_MESSAGE
+              value: "release v1"
+            - name: PODINFO_UI_COLOR
+              value: "#34577c"
+            # Fault switch: "true" returns random 5xx (the bad release)
+            - name: PODINFO_RANDOM_ERROR
+              value: "false"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi

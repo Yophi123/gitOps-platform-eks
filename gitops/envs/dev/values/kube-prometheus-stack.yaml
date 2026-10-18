@@ -1,0 +1,63 @@
+# Dev monitoring: Prometheus + Grafana on Karpenter nodes, no persistence.
+# Canary analysis (stage 5) queries this Prometheus.
+
+# EKS manages these; their endpoints aren't scrapeable (and there's no kube-proxy)
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+alertmanager:
+  enabled: false # no alert routing yet
+
+prometheusOperator:
+  # The webhook-patch hook injects a CA at runtime, which Argo CD would see as drift
+  admissionWebhooks:
+    enabled: false
+  tls:
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+prometheus:
+  prometheusSpec:
+    retention: 2d
+    # Pick up every ServiceMonitor/PodMonitor/PrometheusRule, not only this chart's
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+      limits:
+        memory: 2Gi
+
+grafana:
+  defaultDashboardsTimezone: utc
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+
+# DaemonSet: run on every node, system nodes included
+prometheus-node-exporter:
+  tolerations:
+    - operator: Exists
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi

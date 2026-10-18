@@ -1,0 +1,32 @@
+# Constant traffic so analysis always has data
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  namespace: podinfo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: loadgen
+  template:
+    metadata:
+      labels:
+        app: loadgen
+    spec:
+      containers:
+        - name: loadgen
+          image: curlimages/curl:8.11.1
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                curl -s -o /dev/null http://podinfo.podinfo.svc:9898/
+                sleep 0.1
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 32Mi

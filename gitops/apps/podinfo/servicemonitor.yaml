@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: podinfo
+  namespace: podinfo
+spec:
+  selector:
+    matchLabels:
+      app: podinfo
+  # Copies the Rollouts hash onto every series, so analysis can isolate the canary.
+  # Prometheus turns the label into rollouts_pod_template_hash.
+  podTargetLabels:
+    - rollouts-pod-template-hash
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
