@@ -21,6 +21,13 @@ terraform {
       version = "~> 3.6"
     }
   }
+  backend "s3" {
+    bucket = "gitops-eks-tfstate-123456"
+    key          = "envs/dev/terraform.tfstate"
+    region       = "ap-southeast-1"
+    encrypt      = true
+    use_lockfile = true
+  }
 }
 
 provider "aws" {

@@ -10,7 +10,7 @@ output "port" {
 
 output "db_name" {
   description = "Application database name"
-  value       = var.db_name
+  value       = aws_db_instance.this.db_name
 }
 
 output "master_secret_arn" {

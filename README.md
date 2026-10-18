@@ -157,8 +157,16 @@ propose replacing the EKS cluster.
 ## Quick start
 
 ```bash
-make ami                 # once per Vault version
-make bootstrap           # core → render/push → full apply → render/push
+make ami                 # once per Vault version (the vault module needs the AMI)
+make core                # VPC, EKS, Cilium, CoreDNS, Karpenter
+make kubeconfig
+
+# Vault and RDS before the first push: the demo workload is rendered from their outputs
+terraform -chdir=infra/envs/dev apply -target=module.vault -target=module.rds
+
+make push                # render + check + commit/push gitops/ (fresh endpoints)
+make apply               # Argo CD + root app; adopts Cilium and Karpenter from Git
+
 make vault-shell         # once: vault operator init -recovery-shares=1 -recovery-threshold=1
 make vault-tunnel        # separate terminal, leave running
 eval "$(make -s vault-env)"
@@ -167,16 +175,23 @@ make vault-config
 make status
 ```
 
-### Why bootstrap runs in two phases
+### Why this order
 
-The Cilium values in Git contain the cluster's API endpoint, which changes
-whenever the cluster is recreated. `make bootstrap` therefore:
+1. **`make core` before Argo CD.** The Cilium values in Git contain the cluster's
+   API endpoint, which changes whenever the cluster is recreated. Argo CD must
+   only adopt Cilium after those values are re-rendered.
+2. **Vault and RDS before the first `make push`.** `make render` writes
+   `gitops/apps/demo/vault-dynamic-secret.yaml` and `external-secret.yaml` from
+   the `vault_addr`, `vault_ca_cert_pem`, `rds_address` and `rds_db_name`
+   outputs. Until those exist, render warns
+   `Vault/RDS outputs not available yet` and skips the two files. `make check`
+   (part of `make push`) then fails because `gitops/apps/demo` can't build.
+3. **`make push` before `make apply`.** The root app syncs as soon as Argo CD is
+   installed, so Git must already hold the fresh values.
 
-1. `make core`: applies only up to Karpenter (VPC, EKS, Cilium, CoreDNS, Karpenter).
-2. `make push`: renders `gitops/` with the new endpoint, checks it, commits and pushes.
-3. `make apply`: full apply, which installs Argo CD (adopting Cilium and Karpenter
-   with the fresh values), Vault and RDS.
-4. `make push`: renders again, now that the Vault and RDS endpoints exist.
+`make bootstrap` still runs the older order (core → push → apply → push), which
+stops at the first push because Vault and RDS don't exist yet. Use the steps
+above for a fresh environment.
 
 ## Operations
 
@@ -184,7 +199,7 @@ whenever the cluster is recreated. `make bootstrap` therefore:
 |------|---------|
 | List all targets | `make help` |
 | Build the Vault AMI | `make ami` |
-| Fresh environment, end to end | `make bootstrap` |
+| Fresh environment, end to end | [Quick start](#quick-start) steps (not `make bootstrap`; see "Why this order") |
 | Infrastructure changes | `make apply` |
 | GitOps changes after an apply (new endpoints, versions) | `make push` |
 | Render or check without pushing | `make render` / `make check` |
@@ -198,6 +213,8 @@ whenever the cluster is recreated. `make bootstrap` therefore:
 
 `make check` runs inside `make push` and stops on leftover placeholders, empty
 files, broken kustomizations, and Applications pointing at paths that don't exist.
+It needs Vault and RDS to exist, since the demo workload's files are rendered
+from their outputs.
 
 ---
 
@@ -492,13 +509,14 @@ Every Application uses the same sync policy: automated sync with self-heal,
 `ServerSideApply` and `CreateNamespace`. Platform Applications have no deletion
 finalizer: removing `cilium` from Git must never uninstall the CNI.
 
-```bash
-make push                                                   # values must be in Git first
-terraform -chdir=infra/envs/dev apply -target=module.argocd_bootstrap
-```
+Vault and RDS (stage 4a) must exist first, so `make push` can render the demo
+workload and pass `make check`:
 
-A plain `make apply` also works once the Vault AMI exists (it creates Vault and
-RDS as well; see stage 4).
+```bash
+terraform -chdir=infra/envs/dev apply -target=module.vault -target=module.rds
+make push    # values must be in Git before Argo CD installs
+make apply   # installs Argo CD and the root app
+```
 
 ### Applications synced and healthy
 
@@ -577,10 +595,19 @@ a manual change is reverted, and a Git change reaches the cluster without `kubec
 
 ### 4a. Vault cluster and RDS
 
+Vault and RDS are created right after `make core`, before Argo CD (see
+[Why this order](#why-this-order)):
+
 ```bash
 make ami      # Ubuntu 26.04 + Vault, tagged Component=vault for the module
-make apply
+terraform -chdir=infra/envs/dev apply -target=module.vault -target=module.rds
 make push     # Vault and RDS endpoints now exist; renders the demo workload
+```
+
+Check that render produced the demo files:
+
+```bash
+ls gitops/apps/demo/   # includes vault-dynamic-secret.yaml and external-secret.yaml
 ```
 
 Three Vault nodes start and wait to join a leader. Initialize the cluster once,
@@ -861,6 +888,7 @@ _TODO_
 | Symptom | Likely cause | Check |
 |---------|--------------|-------|
 | `make check` fails | Placeholder, empty file, wrong path or name | Fix what it lists, then `make push` |
+| `make check`: `gitops/apps/demo` fails, `vault-dynamic-secret.yaml: no such file or directory` | Vault/RDS don't exist yet, so render skipped the demo files (it warns `Vault/RDS outputs not available yet`) | `terraform -chdir=infra/envs/dev apply -target=module.vault -target=module.rds`, then `make push`. Don't hand-write the files with placeholders |
 | App sync status `Unknown` | Manifests can't be generated (`kustomization.yaml is empty`, bad path, bad chart version) | `kubectl -n argocd get application <app> -o jsonpath='{.status.conditions}'` |
 | `invalid revision: improper constraint` | Chart version missing in `scripts/dev.env` | Set it, `make push` |
 | `failed to discover server resources for group version ...` | App synced before its CRDs existed | Retry resolves it; else `make sync APP=<app>` |

@@ -11,10 +11,17 @@ terraform {
       version = "~> 6.0"
     }
   }
+  backend "s3" {
+    bucket       = "gitops-eks-tfstate-123456"
+    key          = "envs/dev-vault/terraform.tfstate"
+    region       = "ap-southeast-1"
+    encrypt      = true
+    use_lockfile = true
+  }
 }
 
 provider "aws" {
-  region = var.aws_region
+  region = var.region
   profile = "terraform"
 
   default_tags {
