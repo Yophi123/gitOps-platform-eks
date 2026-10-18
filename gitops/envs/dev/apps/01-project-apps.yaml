@@ -1,0 +1,18 @@
+# Workloads: Git only, their own namespaces, no cluster-wide resources except Namespaces
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: apps
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  description: Application workloads
+  sourceRepos:
+    - https://github.com/Yophi123/gitOps-platform-eks.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: demo
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace

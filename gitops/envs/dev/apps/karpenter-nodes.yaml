@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: karpenter-nodes
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  project: platform
+  destination:
+    server: https://kubernetes.default.svc
+  source:
+    repoURL: https://github.com/Yophi123/gitOps-platform-eks.git
+    targetRevision: main
+    path: gitops/platform/karpenter
+  syncPolicy:
+    automated:
+      prune: true # a NodePool removed from Git is removed (and its nodes drained)
+      selfHeal: true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 5m
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
